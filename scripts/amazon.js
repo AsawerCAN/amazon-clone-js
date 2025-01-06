@@ -1,119 +1,157 @@
-import { cart } from "../data/cart.js";
+import { products } from "../data/products.js";
 
-let productsHTML = "";
+const TIMEOUT_DURATION = 2000;
+const DEFAULT_QUANTITY = 1;
+const MAX_QUANTITY = 10;
 
-products.forEach((product) => {
-  productsHTML += `
-    <div class="product-container">
-          <div class="product-image-container">
-            <img
-              class="product-image"
-              src="${product.image}"
-            />
-          </div>
+const formatPrice = (priceCents) => `$${(priceCents / 100).toFixed(2)}`;
 
-          <div class="product-name limit-text-to-2-lines">
-            ${product.name}
-          </div>
+const createQuantityOptions = (maxQty = MAX_QUANTITY) =>
+  Array.from({ length: maxQty }, (_, i) => i + 1)
+    .map(
+      (num) =>
+        `<option value="${num}"${num === 1 ? " selected" : ""}>${num}</option>`
+    )
+    .join("");
 
-          <div class="product-rating-container">
-            <img
-              class="product-rating-stars"
-              src="images/ratings/rating-${product.rating.stars * 10}.png"
-            />
-            <div class="product-rating-count link-primary">${
-              product.rating.count
-            }</div>
-          </div>
+class CartManager {
+  constructor() {
+    this.cart = new Map();
+    this.messageTimeouts = new Map();
+  }
 
-          <div class="product-price">$${(product.priceCents / 100).toFixed(
-            2
-          )}</div>
-
-          <div class="product-quantity-container">
-            <select class="js-quantity-selector-${product.id}">
-              <option selected value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
-              <option value="6">6</option>
-              <option value="7">7</option>
-              <option value="8">8</option>
-              <option value="9">9</option>
-              <option value="10">10</option>
-            </select>
-          </div>
-
-          <div class="product-spacer"></div>
-
-          <div class="added-to-cart js-added-to-cart-selector-${product.id}">
-            <img src="images/icons/checkmark.png" />
-            Added
-          </div>
-
-          <button class="add-to-cart-button button-primary js-add-to-cart" data-product-id="${
-            product.id
-          }">Add to Cart</button>
-        </div>
-    `;
-});
-
-document.querySelector(".js-products-grid").innerHTML = productsHTML;
-
-const addMessagesTimeout = {};
-
-document.querySelectorAll(".js-add-to-cart").forEach((button) => {
-  button.addEventListener("click", () => {
-    const { productId } = button.dataset;
-
-    let matchingItem;
-
-    cart.forEach((item) => {
-      if (productId === item.productId) {
-        matchingItem = item;
-      }
-    });
-
-    const quantitySelector = document.querySelector(
-      `.js-quantity-selector-${productId}`
+  updateCartQuantity() {
+    const totalQuantity = Array.from(this.cart.values()).reduce(
+      (sum, item) => sum + item.quantity,
+      0
     );
 
-    const quantity = Number(quantitySelector.value);
+    document.querySelector(".js-cart-quantity").textContent = totalQuantity;
+  }
 
-    if (matchingItem) {
-      matchingItem.quantity += 1;
-      matchingItem.quantity += quantity;
+  addToCart(productId, quantity) {
+    const existingItem = this.cart.get(productId);
+
+    if (existingItem) {
+      existingItem.quantity += quantity;
+      this.cart.set(productId, existingItem);
     } else {
-      cart.push({
-        productId,
-        quantity,
-      });
+      this.cart.set(productId, { productId, quantity });
     }
 
-    let cartQuantity = 0;
+    this.updateCartQuantity();
+    this.showAddedMessage(productId);
+  }
 
-    cart.forEach((item) => {
-      cartQuantity += item.quantity;
-    });
-
-    document.querySelector(".js-cart-quantity").innerHTML = cartQuantity;
-
+  showAddedMessage(productId) {
     const addedMessage = document.querySelector(
       `.js-added-to-cart-selector-${productId}`
     );
+    if (!addedMessage) return;
 
     addedMessage.classList.add("added-to-cart-visible");
 
-    const previousTimeoutId = addMessagesTimeout[productId];
-    if (previousTimeoutId) {
-      clearTimeout(previousTimeoutId);
+    const existingTimeout = this.messageTimeouts.get(productId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
     }
 
     const timeoutId = setTimeout(() => {
       addedMessage.classList.remove("added-to-cart-visible");
-    }, 2000);
+      this.messageTimeouts.delete(productId);
+    }, TIMEOUT_DURATION);
 
-    addMessagesTimeout[productId] = timeoutId;
-  });
-});
+    this.messageTimeouts.set(productId, timeoutId);
+  }
+}
+
+class ProductGrid {
+  constructor(products, cartManager) {
+    this.products = products;
+    this.cartManager = cartManager;
+    this.gridElement = document.querySelector(".js-products-grid");
+  }
+
+  createProductHTML(product) {
+    const { id, image, name, rating, priceCents } = product;
+
+    return `
+      <div class="product-container">
+        <div class="product-image-container">
+          <img class="product-image" src="${image}" alt="${name}" loading="lazy" />
+        </div>
+        
+        <div class="product-name limit-text-to-2-lines">
+          ${name}
+        </div>
+        
+        <div class="product-rating-container">
+          <img 
+            class="product-rating-stars" 
+            src="images/ratings/rating-${rating.stars * 10}.png" 
+            alt="${rating.stars} stars"
+          />
+          <div class="product-rating-count link-primary">
+            ${rating.count}
+          </div>
+        </div>
+        
+        <div class="product-price">
+          ${formatPrice(priceCents)}
+        </div>
+        
+        <div class="product-quantity-container">
+          <select class="js-quantity-selector-${id}">
+            ${createQuantityOptions()}
+          </select>
+        </div>
+        
+        <div class="product-spacer"></div>
+        
+        <div class="added-to-cart js-added-to-cart-selector-${id}">
+          <img src="images/icons/checkmark.png" alt="Added to cart" />
+          Added
+        </div>
+        
+        <button 
+          class="add-to-cart-button button-primary js-add-to-cart"
+          data-product-id="${id}"
+        >
+          Add to Cart
+        </button>
+      </div>
+    `;
+  }
+
+  render() {
+    const productsHTML = this.products
+      .map((product) => this.createProductHTML(product))
+      .join("");
+
+    this.gridElement.innerHTML = productsHTML;
+    this.attachEventListeners();
+  }
+
+  attachEventListeners() {
+    const addToCartButtons =
+      this.gridElement.querySelectorAll(".js-add-to-cart");
+
+    addToCartButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const productId = button.dataset.productId;
+        const quantitySelector = document.querySelector(
+          `.js-quantity-selector-${productId}`
+        );
+        const quantity = Number(quantitySelector.value);
+
+        this.cartManager.addToCart(productId, quantity);
+      });
+    });
+  }
+}
+
+const cartManager = new CartManager();
+const productGrid = new ProductGrid(products, cartManager);
+productGrid.render();
+
+export { cartManager, productGrid };
